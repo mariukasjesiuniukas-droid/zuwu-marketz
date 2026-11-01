@@ -42,3 +42,13 @@ SVARBIOS PASTABOS / APRIBOJIMAI
 Failai
 - index.html — svetainės front-end.
 - setup.sql — Supabase lentelės, RLS ir saugus užsakymo RPC.
+
+
+ATNAUJINIMAS: ŽINUČIŲ IR UŽSAKYMŲ PRANEŠIMAI
+1. Supabase SQL Editor paleisk notifications-migration.sql.
+2. Įkelk atnaujintą index.html į GitHub (pakeisk seną).
+3. Vercel automatiškai iš naujo įdiegs svetainę.
+4. Prisijungęs profilį atsidaryk „Mano užsakymai“ – ten matysi būsenas.
+5. „Įjungti naršyklės pranešimus“ leidžia gauti pranešimus, kai svetainė atidaryta ir naršyklė leidžia pranešimus.
+
+PayPal: šiame kataloge yra žaidimų valiuta ir skaitmeniniai virtualūs daiktai. PayPal Acceptable Use Policy riboja virtualių žaidimų valiutų ir tam tikrų skaitmeninių prekių operacijas. Todėl PayPal mygtukas neįjungiamas, kol PayPal raštu nepatvirtina konkrečių tavo prekių tinkamumo.
