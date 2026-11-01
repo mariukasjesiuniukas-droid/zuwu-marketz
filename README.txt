@@ -1,42 +1,44 @@
-ZUWU MARKET – SUPABASE CONNECTED STARTER
+ZUWU MARKET — VIENAS ADMINISTRATORIUS + KATALOGAS + UŽSAKYMAI
 
-This version connects email/password authentication and marketplace listings to Supabase.
-Supabase project URL configured: https://fhjymwbiyzgllpcyzfqb.supabase.co
-The browser publishable key is configured in index.html. Publishable keys are intended for browser use; database access must be protected by Row Level Security policies.
+Kas įtraukta
+- Supabase el. pašto / slaptažodžio registracija ir prisijungimas.
+- Discord OAuth prisijungimas (Supabase Discord provider).
+- Tik vienas nustatytas ADMIN_USER_ID gali kurti, redaguoti ir trinti skelbimus.
+- Viešas katalogas su žaidimų valiutos, skinų / daiktų, žaidimų kodų ir kitos kategorijomis.
+- Admino skelbimų nuotraukų įkėlimas į Supabase Storage bucket listing_images.
+- Profiliai ir privačios žinutės (naudoja jau sukurtas profiles ir messages lenteles).
+- Užsakymo pateikimas be mokėjimo: pirkėjas pateikia užklausą, adminas peržiūri ir patvirtina / atmeta / pažymi įvykdytu.
+- Discord serverio mygtukas: https://discord.gg/mMeb5vn6Vz
+- Jokios reklamos.
 
-IMPORTANT SETUP BEFORE TESTING
-1. In Supabase > Authentication > URL Configuration:
-   - Set Site URL to your Vercel website URL (for example https://your-project.vercel.app).
-   - Add that same URL to Redirect URLs. Add your custom domain too if configured.
-2. In Supabase > Authentication > Providers > Email, enable Email provider.
-3. For Discord login, enable Discord provider in Supabase and configure a Discord OAuth application. Add Supabase's displayed callback URL to Discord Developer Portal OAuth2 Redirects. The Discord button will not work until this is configured.
-4. Ensure the SQL tables and RLS policies from the setup tutorial have been run.
-5. In Supabase SQL Editor, run the extra SQL below to allow authenticated users to create their own profile row when they first sign in, if your profiles table does not already have it:
+SVARBU APIE MOKĖJIMUS
+Šioje versijoje kortelių / PayPal atsiskaitymas NEĮJUNGTAS. Pirma reikia patikrinti, ar konkretūs skaitmeniniai žaidimų produktai leidžiami mokėjimo tiekėjo taisyklėse ir platformų licencijose. Niekada nerink kortelių duomenų pačioje svetainėje. Tik po patvirtinimo mokėjimo tiekėjas turi būti prijungtas per saugų serverio webhook, o ne per naršyklės JS. Paskyrų / prenumeratų prieigų perpardavimas gali pažeisti platformų taisykles; šiame kataloge jų kaip atskiros kategorijos nėra.
 
-create policy "Users create own profile"
-on public.profiles for insert
-with check (auth.uid() = id);
+DIEGIMAS
+1. Išskleisk ZIP. GitHub repo pakeisk seną index.html nauju. Įkelk ir setup.sql / README.txt (SQL failas nėra būtinas Vercel, jį paleisi Supabase).
+2. Supabase -> Authentication -> Users. Susikurk savo paskyrą, patvirtink el. paštą, surask savo vartotoją ir nukopijuok UID (UUID).
+3. Atidaryk setup.sql. Pakeisk VISAS PAKEISK_ADMIN_USER_UUID vietas į savo UID. Viena vieta SQL funkcijoje, kita index.html faile (ADMIN_USER_ID). UID yra UUID, ne el. pašto adresas.
+4. Supabase -> SQL Editor -> New query. Įklijuok setup.sql su savo pakeistu UUID ir paleisk.
+5. Supabase -> Storage. SQL automatiškai sukuria / atnaujina PUBLIC bucket listing_images. Esami bucket avatars paliekami.
+6. Patikrink, kad profiles lentelė turi: id, username, avatar_url, bio, updated_at. listings lentelė turi: id (uuid), seller_id (uuid), title, description, price, category, image_url, status, created_at. messages lentelė turi: sender_id, receiver_id, listing_id, content, created_at. Jų RLS turi riboti žinutes tik pokalbio dalyviams.
+7. Supabase -> Authentication -> URL Configuration: Site URL https://www.zuwumarket.store; Redirect URLs pridėk https://www.zuwumarket.store/** ir savo Vercel domeną/**. Discord provider turi būti įjungtas.
+8. GitHub -> Commit changes. Vercel automatiškai persiųs naują versiją. Patikrink svetainę.
 
-The existing listing policies must allow authenticated users to insert rows only when seller_id = auth.uid().
+KAIP VEIKIA ADMINAS
+- Prisijunk su ta paskyra, kurios UID įrašytas ADMIN_USER_ID.
+- Atsiras mygtukas Admin ir Skelbti prekę.
+- Kiti vartotojai gali registruotis, naršyti, rašyti žinutes ir pateikti užsakymus, bet negali skelbti.
+- Užsakymą sukurs saugi submit_order() SQL funkcija: kaina paimama iš listings lentelės, ne iš naršyklės įvesties.
+- Admin -> Užsakymai: pakeisk būseną į Patvirtinta / Atmesta / Įvykdyta / Grąžinta.
 
-DEPLOY
-1. Extract this ZIP.
-2. Open your GitHub repository.
-3. Replace the old index.html with this new index.html (and optionally upload this README).
-4. Commit changes. Vercel should redeploy automatically.
+SVARBIOS PASTABOS / APRIBOJIMAI
+- Ši versija yra veikiantis prototipas, ne pilnai audituota komercinė platforma.
+- Užsakymo patvirtinimas nėra mokėjimo patvirtinimas. Nėra kortelių ar PayPal checkout, automatinio išmokėjimo ar webhook.
+- Prieš viešą paleidimą pridėk privatumo politiką, naudojimo taisykles, kontaktus, skundų / grąžinimų tvarką, apsaugą nuo spam ir moderavimo procesą.
+- Neįkelk slaptažodžių, paskyrų prisijungimų, recovery kodų ar kitų slaptų duomenų į skelbimus / žinutes.
+- Jei anksčiau turėjai viešą listing_images bucket su kitomis upload politikomis, setup.sql įdeda ribojančias taisykles. Patikrink Storage -> Policies po paleidimo.
+- Po OAuth prisijungimo naudok domeną, kuris įtrauktas į Supabase Redirect URLs.
 
-CURRENTLY CONNECTED
-- Email/password registration and login
-- Logout
-- Load shared active listings from Supabase
-- Create shared listings in Supabase
-- Discord OAuth button (requires provider configuration)
-
-NOT YET IMPLEMENTED
-- Listing photo upload (Storage bucket and upload policies required)
-- Buyer/seller messaging UI
-- Payment processing
-- Admin moderation and reporting
-- Full production security review
-
-Do not add Supabase secret/service_role keys or database passwords to this website. Never collect payment card details directly.
+Failai
+- index.html — svetainės front-end.
+- setup.sql — Supabase lentelės, RLS ir saugus užsakymo RPC.
