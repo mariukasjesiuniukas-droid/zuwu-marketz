@@ -1,5 +1,5 @@
 // Vercel function: creates one private Discord ticket for one or more ZUWU order rows.
-const { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, DISCORD_TICKET_CATEGORY_ID, DISCORD_STAFF_ROLE_ID } = process.env;
+const { SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID, DISCORD_TICKET_CATEGORY_ID, DISCORD_STAFF_ROLE_ID, TICKET_SUPPORT_ROLE_ID } = process.env;
 function reply(res,status,body){return res.status(status).json(body)}
 async function discordRequest(path,options={}){
   const r=await fetch(`https://discord.com/api/v10${path}`,{...options,headers:{Authorization:`Bot ${DISCORD_BOT_TOKEN}`,'Content-Type':'application/json',...(options.headers||{})}});
@@ -19,20 +19,28 @@ module.exports=async function handler(req,res){
     const ident=(u.identities||[]).find(x=>x.provider==='discord');const discordId=ident&&(ident.identity_data?.provider_id||ident.identity_data?.sub||ident.provider_id);
     if(!discordId||!/^[0-9]{17,20}$/.test(String(discordId)))return reply(res,400,{error:'Pirmiausia prisijunk prie ZUWU MARKET per Discord.'});
     const filter=orderIds.map(encodeURIComponent).join(',');
-    const or=await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,buyer_id,listing_id,amount,buyer_note,status,quantity,unit_price&id=in.(${filter})`,{headers:sh});const orders=await or.json().catch(()=>[]);
+    const or=await fetch(`${SUPABASE_URL}/rest/v1/orders?select=id,buyer_id,listing_id,amount,buyer_note,status,quantity,unit_price,payment_method&id=in.(${filter})`,{headers:sh});const orders=await or.json().catch(()=>[]);
     if(!or.ok)return reply(res,502,{error:'Nepavyko patikrinti užsakymų Supabase.'});
     if(!Array.isArray(orders)||orders.length!==orderIds.length||orders.some(o=>o.buyer_id!==u.id))return reply(res,403,{error:'Vienas ar daugiau užsakymų nepriklauso tavo paskyrai.'});
     const listingIds=[...new Set(orders.map(o=>o.listing_id))];const lr=await fetch(`${SUPABASE_URL}/rest/v1/listings?select=id,title&id=in.(${listingIds.map(encodeURIComponent).join(',')})`,{headers:sh});const listings=await lr.json().catch(()=>[]);if(!lr.ok)return reply(res,502,{error:'Nepavyko gauti prekių informacijos.'});
     const titles=Object.fromEntries((listings||[]).map(x=>[x.id,x.title]));
     const key=orderIds.slice().sort().join(',');const topic=`zuwu-cart:${key}`;
     const channels=await discordRequest(`/guilds/${DISCORD_GUILD_ID}/channels`);const existing=channels.find(c=>c.type===0&&c.topic===topic);
-    if(existing)return reply(res,200,{ok:true,channelName:existing.name,url:`https://discord.com/channels/${DISCORD_GUILD_ID}/${existing.id}`,alreadyExists:true});
-    const me=await discordRequest('/users/@me');const overwrites=[{id:DISCORD_GUILD_ID,type:0,deny:'1024'},{id:String(discordId),type:1,allow:'68608'},{id:String(me.id),type:1,allow:'68608'}];if(DISCORD_STAFF_ROLE_ID)overwrites.push({id:DISCORD_STAFF_ROLE_ID,type:0,allow:'68608'});
+    if(existing){
+      const rows=orders.map(o=>({order_id:o.id,discord_channel_id:String(existing.id),discord_guild_id:String(DISCORD_GUILD_ID),buyer_id:u.id,status:'open'}));
+      const mr=await fetch(`${SUPABASE_URL}/rest/v1/zuwu_discord_tickets?on_conflict=order_id`,{method:'POST',headers:{...sh,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+      if(!mr.ok)return reply(res,502,{error:'Discord ticketas rastas, bet nepavyko išsaugoti jo susiejimo Supabase.'});
+      return reply(res,200,{ok:true,channelName:existing.name,url:`https://discord.com/channels/${DISCORD_GUILD_ID}/${existing.id}`,alreadyExists:true});
+    }
+    const me=await discordRequest('/users/@me');const overwrites=[{id:DISCORD_GUILD_ID,type:0,deny:'1024'},{id:String(discordId),type:1,allow:'68608'},{id:String(me.id),type:1,allow:'68608'}];const supportRoleId=TICKET_SUPPORT_ROLE_ID||DISCORD_STAFF_ROLE_ID;if(supportRoleId)overwrites.push({id:supportRoleId,type:0,allow:'68608'});
     const channel=await discordRequest(`/guilds/${DISCORD_GUILD_ID}/channels`,{method:'POST',body:JSON.stringify({name:`zuwu-${String(orders[0].id).slice(0,8)}`,type:0,parent_id:DISCORD_TICKET_CATEGORY_ID,topic,permission_overwrites:overwrites})});
     const lines=orders.map((o,i)=>`${i+1}. **${String(titles[o.listing_id]||'Prekė').replace(/[\r\n]/g,' ').slice(0,70)}** × ${Number(o.quantity||1)} — **${Number(o.amount).toFixed(2)} €**`).join('\n');
-    const total=orders.reduce((sum,o)=>sum+Number(o.amount),0);const note=String(orders[0].buyer_note||'').slice(0,500).replace(/@/g,'@\u200b');
-    const content=[`**Naujas ZUWU MARKET krepšelio užsakymas**`,`**Pirkėjas:** <@${discordId}>`,``,`**Prekės:**`,lines,``,`**Galutinė suma:** **${total.toFixed(2)} €**`,`**Užsakymo ID:** ${orders.map(o=>`\`${o.id}\``).join(', ')}`,`**Būsena:** Laukiama peržiūros`,note?`**Pastaba:** ${note}`:'','ZUWU komanda čia susisieks dėl užsakymo.'].filter(Boolean).join('\n');
+    const total=orders.reduce((sum,o)=>sum+Number(o.amount),0);const paymentLabel=orders[0].payment_method==='card'?'Banko kortelė':'PayPal';const note=String(orders[0].buyer_note||'').slice(0,500).replace(/@/g,'@\u200b');
+    const content=[`**Naujas ZUWU MARKET krepšelio užsakymas**`,`**Pirkėjas:** <@${discordId}>`,``,`**Prekės:**`,lines,``,`**Galutinė suma:** **${total.toFixed(2)} €**`,`**Pasirinktas mokėjimo būdas:** ${paymentLabel} (mokėjimas dar derinamas)`,`**Užsakymo ID:** ${orders.map(o=>`\`${o.id}\``).join(', ')}`,`**Būsena:** Laukiama peržiūros`,note?`**Pastaba:** ${note}`:'','ZUWU komanda čia susisieks dėl užsakymo.'].filter(Boolean).join('\n');
     try{await discordRequest(`/channels/${channel.id}/messages`,{method:'POST',body:JSON.stringify({content:content.slice(0,1900),allowed_mentions:{parse:[],users:[String(discordId)]}})})}catch(e){await discordRequest(`/channels/${channel.id}`,{method:'DELETE'}).catch(()=>{});throw e}
+    const rows=orders.map(o=>({order_id:o.id,discord_channel_id:String(channel.id),discord_guild_id:String(DISCORD_GUILD_ID),buyer_id:u.id,status:'open'}));
+    const mr=await fetch(`${SUPABASE_URL}/rest/v1/zuwu_discord_tickets?on_conflict=order_id`,{method:'POST',headers:{...sh,Prefer:'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+    if(!mr.ok){console.error('Could not persist Discord ticket mapping:',await mr.text());return reply(res,502,{error:'Discord ticketas sukurtas, bet nepavyko išsaugoti jo susiejimo Supabase. Kreipkis į administratorių.'});}
     return reply(res,200,{ok:true,channelName:channel.name,url:`https://discord.com/channels/${DISCORD_GUILD_ID}/${channel.id}`});
   }catch(e){console.error('ZUWU Discord ticket error:',e);return reply(res,502,{error:`Discord ticket nepavyko sukurti: ${e.message}${e.discordCode?` (Discord code ${e.discordCode})`:''}`})}
 };
